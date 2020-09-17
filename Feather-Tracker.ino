@@ -2,14 +2,16 @@
 #include <Adafruit_GPS.h>
 #include <SPI.h>
 
-#define DEBUG
+//#define DEBUG
 #define GPSSerial Serial1
 
 #ifdef DEBUG
- #define DEBUG_PRINT(x)  Serial.println (x)
+ #define DEBUG_PRINT(x)  Serial.println(x)
+ #define DEBUG_PRINTS(x) Serial.print(x)
  #define DEBUG_LED(x) digitalWrite(LED_BUILTIN, x)
 #else
  #define DEBUG_PRINT(x)
+ #define DEBUG_PRINTS(x)
  #define DEBUG_LED(x)
 #endif
 
@@ -23,14 +25,17 @@ uint8_t AppSkey[16] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x
 uint8_t DevAddr[4] = { 0x00, 0x00, 0x00, 0x00 };
 
 // How many times data transfer should occur, in seconds
-const unsigned int sendInterval = 30;
+const unsigned int sendInterval = 120;
 
 TinyLoRa lora = TinyLoRa(7, 8, 4);
 Adafruit_GPS GPS(&GPSSerial);
 
-unsigned char loraData[15];
+unsigned char loraData[6];
+char coordBuf[20];
 float latitude;
 float longitude;
+char lat;
+char lon;
 
 void setupLora() {
   DEBUG_PRINT("Starting LoRa...");
@@ -64,19 +69,37 @@ void setupGPS() {
 
 void setCoords() {
   if (GPS.fix) {
+    DEBUG_PRINT("Has GPS Fix");
     latitude = GPS.latitude;
     longitude = GPS.longitude;
+    lat = GPS.lat;
+    lon = GPS.lon;
   } else {
     latitude = 0.0;
     longitude = 0.0;
+    DEBUG_PRINT("No GPS Fix");
+    lat = 'Z';
+    lon = 'Z';
   }
   
-  DEBUG_PRINT(printf("Latitude: %.4f, Longitude: %.4f", latitude, longitude));
-  snprintf((char*)loraData, sizeof(loraData), "%.4f%c%.4f%c", 
-   GPS.latitude, GPS.lat, GPS.longitude, GPS.lon);
+  DEBUG_PRINTS("Current Coordinates:");
+  DEBUG_PRINTS(latitude);
+  DEBUG_PRINTS(lat);
+  DEBUG_PRINTS(longitude);
+  DEBUG_PRINT(lon);
 }
 
 void sendCoords() {
+  int16_t latInt = round(latitude*100);
+  int16_t lonInt = round(longitude*100);
+  
+  loraData[0] = highByte(latInt);
+  loraData[1] = lowByte(latInt);
+  loraData[2] = lat;
+  loraData[3] = highByte(lonInt);
+  loraData[4] = lowByte(lonInt);
+  loraData[5] = lon;
+  
   DEBUG_PRINT("Sending LoRa Data..."); 
   DEBUG_PRINT((char*)loraData);
   lora.sendData(loraData, sizeof(loraData), lora.frameCounter);
@@ -91,7 +114,9 @@ void setup()
 {
   delay(2000);
   Serial.begin(115200);
-  
+  delay(2000);
+  DEBUG_PRINT("Booted up");
+
   // Initialize pin LED_BUILTIN as an output
   pinMode(LED_BUILTIN, OUTPUT);
   
@@ -103,6 +128,5 @@ void loop()
 {
   setCoords();
   sendCoords();
-  
   delay(sendInterval * 1000);
 }
